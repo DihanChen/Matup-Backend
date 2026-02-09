@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import { env } from './config/env';
 import emailRoutes from './routes/email';
 
 const app = express();
@@ -9,10 +10,16 @@ const app = express();
 app.use(helmet());
 
 // CORS - allow frontend
+const devOrigins = ['http://localhost:3000', 'http://127.0.0.1:3000'];
+const prodOrigins = [
+  'https://matup.app',
+  'https://www.matup.app',
+  env.frontendUrl,
+].filter(Boolean);
+const allowedOrigins = env.nodeEnv === 'production' ? prodOrigins : devOrigins;
+
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production'
-    ? ['https://matup.app', 'https://www.matup.app']
-    : ['http://localhost:3000', 'http://127.0.0.1:3000'],
+  origin: allowedOrigins,
   credentials: true,
 }));
 
