@@ -3,6 +3,9 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { env } from './config/env';
 import emailRoutes from './routes/email';
+import leagueRoutes from './routes/leagues';
+import fixtureRoutes from './routes/fixtures';
+import sessionRoutes from './routes/sessions';
 
 const app = express();
 
@@ -33,6 +36,9 @@ app.get('/health', (_req, res) => {
 
 // Routes
 app.use('/api/email', emailRoutes);
+app.use('/api/leagues', leagueRoutes);
+app.use('/api/fixtures', fixtureRoutes);
+app.use('/api/sessions', sessionRoutes);
 
 // 404 handler
 app.use((_req, res) => {
