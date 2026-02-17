@@ -13,6 +13,12 @@ test('weekStartIso offsets by week number using 7-day increments', () => {
   assert.equal(weekStartIso('2026-02-01', 4), '2026-02-22T12:00:00.000Z');
 });
 
+test('weekStartIso applies provided start time and falls back to noon for invalid time', () => {
+  assert.equal(weekStartIso('2026-02-01', 1, '06:30'), '2026-02-01T06:30:00.000Z');
+  assert.equal(weekStartIso('2026-02-01', 2, '18:45'), '2026-02-08T18:45:00.000Z');
+  assert.equal(weekStartIso('2026-02-01', 1, 'invalid'), '2026-02-01T12:00:00.000Z');
+});
+
 test('weekEndIso returns null for empty/invalid startsAt values', () => {
   assert.equal(weekEndIso(null), null);
   assert.equal(weekEndIso('invalid'), null);

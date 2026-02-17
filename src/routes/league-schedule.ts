@@ -40,6 +40,7 @@ router.post('/:id/schedule/generate', requireAuth, async (req: Request, res: Res
     const ruleWeeks = getNestedNumber(rules, ['schedule', 'season_weeks']);
     const seasonWeeks = ruleWeeks || league.season_weeks || 10;
     const startDate = getNestedString(rules, ['schedule', 'starts_on']) || league.start_date;
+    const startTime = getNestedString(rules, ['schedule', 'starts_at_local']);
 
     const { count: existingFixtures } = await supabaseAdmin
       .from('league_fixtures')
@@ -80,7 +81,7 @@ router.post('/:id/schedule/generate', requireAuth, async (req: Request, res: Res
       let createdSessions = 0;
 
       for (let week = 1; week <= seasonWeeks; week++) {
-        const startsAt = weekStartIso(startDate, week);
+        const startsAt = weekStartIso(startDate, week, startTime);
         const endsAt = startsAt ? new Date(startsAt) : null;
         if (endsAt) endsAt.setUTCDate(endsAt.getUTCDate() + 6);
 
@@ -176,7 +177,7 @@ router.post('/:id/schedule/generate', requireAuth, async (req: Request, res: Res
     let createdParticipants = 0;
 
     for (const entry of schedule) {
-      const startsAt = weekStartIso(startDate, entry.weekNumber);
+      const startsAt = weekStartIso(startDate, entry.weekNumber, startTime);
       const { data: fixture, error: fixtureError } = await supabaseAdmin
         .from('league_fixtures')
         .insert({
