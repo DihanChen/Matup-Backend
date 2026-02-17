@@ -1,8 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
+import { emailSendRateLimit } from '../middleware/rate-limit';
 import { supabaseAdmin } from '../utils/supabase';
 import { sendGroupEmail } from '../services/email.service';
 import { env } from '../config/env';
+import { getHostName } from '../utils/profile';
+import { buildContextUpdateEmailHtml } from '../templates/email';
 
 const router = Router();
 
@@ -12,57 +15,6 @@ type EmailRequestBody = {
   subject: string;
   message: string;
 };
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function formatMessage(message: string): string {
-  return escapeHtml(message).replace(/\r?\n/g, '<br />');
-}
-
-function buildEmailHtml(params: {
-  title: string;
-  hostName: string;
-  message: string;
-  link: string;
-  contextLabel: string;
-}): string {
-  const safeMessage = formatMessage(params.message);
-  return `
-    <div style="font-family: Arial, sans-serif; background: #f8fafc; padding: 24px;">
-      <div style="max-width: 640px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e4e4e7; overflow: hidden;">
-        <div style="padding: 20px 24px; background: #18181b; color: #ffffff;">
-          <div style="font-size: 14px; letter-spacing: 2px; text-transform: uppercase; opacity: 0.7;">MatUp</div>
-          <div style="font-size: 20px; font-weight: 700; margin-top: 6px;">${escapeHtml(params.title)}</div>
-        </div>
-        <div style="padding: 24px;">
-          <p style="font-size: 14px; color: #52525b; margin: 0 0 8px;">${escapeHtml(params.hostName)} sent an update to ${escapeHtml(params.contextLabel)}.</p>
-          <div style="font-size: 15px; color: #18181b; line-height: 1.6; margin: 0 0 20px;">${safeMessage}</div>
-          <a href="${params.link}" style="display: inline-block; padding: 10px 18px; background: #18181b; color: #ffffff; border-radius: 999px; text-decoration: none; font-size: 14px; font-weight: 600;">View Details</a>
-        </div>
-        <div style="padding: 16px 24px; border-top: 1px solid #f4f4f5; font-size: 12px; color: #71717a;">
-          You received this email because you are part of this ${escapeHtml(params.contextLabel)} on MatUp.
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-async function getHostName(userId: string, fallbackEmail?: string): Promise<string> {
-  const { data: profile } = await supabaseAdmin
-    .from('profiles')
-    .select('name')
-    .eq('id', userId)
-    .single();
-
-  return profile?.name || fallbackEmail || 'MatUp Host';
-}
 
 async function getEmailsForUserIds(userIds: string[]): Promise<string[]> {
   const emails: string[] = [];
@@ -77,7 +29,22 @@ async function getEmailsForUserIds(userIds: string[]): Promise<string[]> {
   return emails;
 }
 
-router.post('/send', requireAuth, async (req: Request, res: Response) => {
+function queueEmailSend(params: {
+  recipients: string[];
+  subject: string;
+  htmlBody: string;
+  replyTo?: string;
+}): void {
+  setImmediate(async () => {
+    try {
+      await sendGroupEmail(params);
+    } catch (error) {
+      console.error('Background email send error:', error);
+    }
+  });
+}
+
+router.post('/send', requireAuth, emailSendRateLimit, async (req: Request, res: Response) => {
   try {
     const { userId, userEmail } = req as AuthenticatedRequest;
     const { type, id, subject, message } = req.body as EmailRequestBody;
@@ -178,7 +145,7 @@ router.post('/send', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    const htmlBody = buildEmailHtml({
+    const htmlBody = buildContextUpdateEmailHtml({
       title: contextTitle,
       hostName,
       message: trimmedMessage,
@@ -186,11 +153,27 @@ router.post('/send', requireAuth, async (req: Request, res: Response) => {
       contextLabel,
     });
 
+    if (recipients.length > 10) {
+      queueEmailSend({
+        recipients,
+        subject: trimmedSubject,
+        htmlBody,
+        replyTo: userEmail || undefined,
+      });
+
+      res.status(202).json({
+        success: true,
+        queued: true,
+        recipients: recipients.length,
+      });
+      return;
+    }
+
     const result = await sendGroupEmail({
       recipients,
       subject: trimmedSubject,
       htmlBody,
-      replyTo: userEmail,
+      replyTo: userEmail || undefined,
     });
 
     res.json({

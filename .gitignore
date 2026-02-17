@@ -21,5 +21,8 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+# TypeScript incremental metadata
+*.tsbuildinfo
+
 # Prisma
 prisma/migrations/

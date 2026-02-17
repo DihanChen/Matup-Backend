@@ -15,6 +15,9 @@ export const env = {
 
   // Frontend URL (for links in emails)
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+  corsAllowedOrigins: process.env.CORS_ALLOWED_ORIGINS
+    ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean)
+    : ['https://matup.app', 'https://www.matup.app', process.env.FRONTEND_URL || ''].filter(Boolean),
 } as const;
 
 export function validateEnv(): void {

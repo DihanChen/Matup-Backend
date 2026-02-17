@@ -2,56 +2,9 @@ import { Router, Request, Response } from 'express';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { supabaseAdmin } from '../utils/supabase';
 import { getLeagueRole, isLeagueAdminRole } from '../utils/league-access';
+import { getSession, requiresOrganizerApproval } from '../services/session.service';
 
 const router = Router();
-
-type SessionRow = {
-  id: string;
-  league_id: string;
-  week_number: number | null;
-  status: string;
-  submission_deadline: string | null;
-  distance_meters: number | null;
-};
-
-function toRulesObject(value: unknown): Record<string, unknown> {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return {};
-}
-
-function getNestedBoolean(obj: Record<string, unknown>, path: string[]): boolean | null {
-  let current: unknown = obj;
-  for (const key of path) {
-    if (!current || typeof current !== 'object' || Array.isArray(current)) return null;
-    current = (current as Record<string, unknown>)[key];
-  }
-  return typeof current === 'boolean' ? current : null;
-}
-
-async function getSession(sessionId: string): Promise<SessionRow | null> {
-  const { data, error } = await supabaseAdmin
-    .from('running_sessions')
-    .select('id, league_id, week_number, status, submission_deadline, distance_meters')
-    .eq('id', sessionId)
-    .single();
-
-  if (error || !data) return null;
-  return data as SessionRow;
-}
-
-async function requiresOrganizerApproval(leagueId: string): Promise<boolean> {
-  const { data } = await supabaseAdmin
-    .from('leagues')
-    .select('rules_jsonb')
-    .eq('id', leagueId)
-    .single();
-
-  const rules = toRulesObject(data?.rules_jsonb);
-  const required = getNestedBoolean(rules, ['submissions', 'require_organizer_approval']);
-  return required === true;
-}
 
 router.post('/:id/runs/submit', requireAuth, async (req: Request, res: Response) => {
   try {

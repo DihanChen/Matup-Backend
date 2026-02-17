@@ -4,8 +4,11 @@
   "description": "Backend API for the MatUp fitness partner matching platform.",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon --exec ts-node src/index.ts",
+    "dev": "nodemon",
     "lint": "tsc --noEmit",
+    "test": "npm run test:services && npm run test:unit",
+    "test:services": "node --test --require ts-node/register src/_tests_/services/*.test.ts",
+    "test:unit": "node --test --require ts-node/register src/_tests_/utils/*.unit.test.ts",
     "build": "tsc",
     "start": "node dist/index.js"
   },
