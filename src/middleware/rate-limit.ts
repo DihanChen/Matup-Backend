@@ -51,3 +51,10 @@ export const emailSendRateLimit = createRateLimitMiddleware({
   },
   errorMessage: 'Too many email requests. Please try again in a minute.',
 });
+
+export const courtsOsmRateLimit = createRateLimitMiddleware({
+  windowMs: 60 * 1000,
+  max: 30,
+  keyGenerator: (req) => req.ip || 'unknown',
+  errorMessage: 'Too many OSM requests. Please try again in a minute.',
+});

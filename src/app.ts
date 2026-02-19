@@ -14,6 +14,7 @@ import fixtureResultsSubmitRoutes from './routes/fixture-results-submit';
 import fixtureResultsConfirmRoutes from './routes/fixture-results-confirm';
 import fixtureResultsResolveRoutes from './routes/fixture-results-resolve';
 import sessionRoutes from './routes/sessions';
+import courtRoutes from './routes/courts';
 
 const app = express();
 
@@ -51,6 +52,7 @@ app.use('/api/fixtures', fixtureResultsSubmitRoutes);
 app.use('/api/fixtures', fixtureResultsConfirmRoutes);
 app.use('/api/fixtures', fixtureResultsResolveRoutes);
 app.use('/api/sessions', sessionRoutes);
+app.use('/api/courts', courtRoutes);
 
 // 404 handler
 app.use((_req, res) => {
