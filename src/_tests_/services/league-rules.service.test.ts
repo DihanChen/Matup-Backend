@@ -12,11 +12,14 @@ test('isAssignedDoublesLeague returns true for fixed_pairs doubles league', () =
     id: 'league-1',
     sport_type: 'tennis',
     scoring_format: 'doubles',
+    league_type: 'season',
     name: 'League',
     invite_code: null,
     rotation_type: 'random',
     season_weeks: 8,
     start_date: null,
+    default_court_id: null,
+    current_season_id: null,
     rules_jsonb: {},
   };
 

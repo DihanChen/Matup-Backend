@@ -4,7 +4,7 @@ import { supabaseAdmin } from '../utils/supabase';
 import { getLeagueRole, isLeagueAdminRole } from '../utils/league-access';
 import { getSession, requiresOrganizerApproval } from '../services/session.service';
 
-const router = Router();
+const router: Router = Router();
 
 router.post('/:id/runs/submit', requireAuth, async (req: Request, res: Response) => {
   try {

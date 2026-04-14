@@ -18,6 +18,12 @@ export const env = {
   corsAllowedOrigins: process.env.CORS_ALLOWED_ORIGINS
     ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean)
     : ['https://matup.app', 'https://www.matup.app', process.env.FRONTEND_URL || ''].filter(Boolean),
+  overpassApiUrls: process.env.OVERPASS_API_URLS
+    ? process.env.OVERPASS_API_URLS.split(',').map((url) => url.trim()).filter(Boolean)
+    : [
+        'https://overpass-api.de/api/interpreter',
+        'https://overpass.kumi.systems/api/interpreter',
+      ],
 } as const;
 
 export function validateEnv(): void {

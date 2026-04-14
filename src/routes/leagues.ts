@@ -3,9 +3,10 @@ import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { supabaseAdmin } from '../utils/supabase';
 import { getLeagueRole, isLeagueAdminRole } from '../utils/league-access';
 import { getLeague } from '../services/league.service';
+import { notifyLeagueMembers } from '../services/notification.service';
 import { toIsoOrNull, weekEndIso } from '../utils/league-dates';
 
-const router = Router();
+const router: Router = Router();
 
 router.get('/:id/sessions', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -235,6 +236,15 @@ router.post('/:id/sessions', requireAuth, async (req: Request, res: Response) =>
     }
 
     res.json({ success: true, session });
+
+    // Notify league members when a session is opened (non-blocking)
+    if (status === 'open' || status === 'scheduled') {
+      notifyLeagueMembers(leagueId, userId, {
+        title: `Week ${weekNumber} Session`,
+        body: `Week ${weekNumber} running session is now available. Submit your run!`,
+        data: { type: 'session_open', leagueId, sessionId: session.id },
+      }).catch(() => {});
+    }
   } catch (error) {
     console.error('Running session save error:', error);
     res.status(500).json({ error: 'Failed to save session' });

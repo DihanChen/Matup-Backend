@@ -1,3 +1,5 @@
+import { env } from '../config/env';
+
 type OverpassElement = {
   id: number;
   type: 'way' | 'node' | string;
@@ -35,7 +37,22 @@ type CacheEntry = {
 
 const CACHE_TTL_MS = 60 * 60 * 1000;
 const CACHE_CLEAN_INTERVAL_MS = 10 * 60 * 1000;
+const OVERPASS_FETCH_TIMEOUT_MS = 25000;
 const cache = new Map<string, CacheEntry>();
+
+export class OverpassRequestError extends Error {
+  status: number | null;
+  endpoint: string;
+  retriable: boolean;
+
+  constructor(message: string, options: { status?: number | null; endpoint: string; retriable?: boolean }) {
+    super(message);
+    this.name = 'OverpassRequestError';
+    this.status = options.status ?? null;
+    this.endpoint = options.endpoint;
+    this.retriable = options.retriable ?? false;
+  }
+}
 
 function roundCoord(value: number): string {
   return value.toFixed(2);
@@ -107,20 +124,72 @@ out center;`;
 
   const body = new URLSearchParams();
   body.append('data', query);
+  let payload: OverpassResponse | null = null;
+  let lastError: OverpassRequestError | null = null;
 
-  const response = await fetch('https://overpass-api.de/api/interpreter', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-    },
-    body: body.toString(),
-  });
+  for (const endpoint of env.overpassApiUrls) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), OVERPASS_FETCH_TIMEOUT_MS);
 
-  if (!response.ok) {
-    throw new Error(`Overpass request failed: ${response.status}`);
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        },
+        body: body.toString(),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        lastError = new OverpassRequestError(
+          `Overpass request failed: ${response.status} (${endpoint})`,
+          {
+            status: response.status,
+            endpoint,
+            retriable: response.status >= 500 || response.status === 429,
+          }
+        );
+
+        if (lastError.retriable) {
+          continue;
+        }
+
+        throw lastError;
+      }
+
+      payload = (await response.json()) as OverpassResponse;
+      lastError = null;
+      break;
+    } catch (error) {
+      if (error instanceof OverpassRequestError) {
+        throw error;
+      }
+
+      if ((error as Error).name === 'AbortError') {
+        lastError = new OverpassRequestError(
+          `Overpass request timed out after ${OVERPASS_FETCH_TIMEOUT_MS}ms (${endpoint})`,
+          { status: null, endpoint, retriable: true }
+        );
+        continue;
+      }
+
+      lastError = new OverpassRequestError(
+        `Overpass request failed (${endpoint}): ${(error as Error).message}`,
+        { status: null, endpoint, retriable: true }
+      );
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
-  const payload = (await response.json()) as OverpassResponse;
+  if (!payload) {
+    throw lastError || new OverpassRequestError('Overpass request failed', {
+      endpoint: env.overpassApiUrls[0] || 'unknown',
+      retriable: true,
+    });
+  }
+
   const courts = (payload.elements || []).reduce<OsmCourt[]>((acc, element) => {
     const coords = getCoordinates(element);
     if (!coords) return acc;

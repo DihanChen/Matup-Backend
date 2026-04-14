@@ -9,7 +9,7 @@ import { env } from '../config/env';
 import { getLeagueRole, isLeagueAdminRole } from '../utils/league-access';
 import { supabaseAdmin } from '../utils/supabase';
 
-const router = Router();
+const router: Router = Router();
 
 type LeagueInviteRow = {
   id: string;

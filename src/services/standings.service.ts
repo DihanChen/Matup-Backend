@@ -35,6 +35,9 @@ export type Standing = {
   goalDifference: number;
   totalTime: number;
   totalPoints: number;
+  streak: number;
+  form: Array<'W' | 'L' | 'D'>;
+  previousRank: number | null;
 };
 
 export type TeamStanding = {
@@ -53,6 +56,80 @@ export type RunningComparisonMode = 'absolute_performance' | 'personal_progress'
 type StandingOptions = {
   runningComparisonMode?: RunningComparisonMode;
 };
+
+type PlayerMatchResult = {
+  week: number;
+  matchId: string;
+  result: 'W' | 'L' | 'D';
+};
+
+function computeStreakAndForm(
+  userId: string,
+  scoringFormat: string,
+  matches: RankingMatch[],
+  participants: RankingParticipant[]
+): { streak: number; form: Array<'W' | 'L' | 'D'> } {
+  const completedMatches = matches.filter((m) => m.status === 'completed');
+  const results: PlayerMatchResult[] = [];
+
+  for (const match of completedMatches) {
+    const matchParticipants = participants.filter((p) => p.match_id === match.id);
+    const playerParticipant = matchParticipants.find((p) => p.user_id === userId);
+    if (!playerParticipant) continue;
+
+    let result: 'W' | 'L' | 'D';
+
+    if (scoringFormat === 'team_vs_team') {
+      const teamA = matchParticipants.filter((p) => p.team === 'A');
+      const teamB = matchParticipants.filter((p) => p.team === 'B');
+      const scoreA = teamA[0]?.score ?? 0;
+      const scoreB = teamB[0]?.score ?? 0;
+      const playerTeam = playerParticipant.team;
+
+      if (scoreA === scoreB) {
+        result = 'D';
+      } else if (
+        (playerTeam === 'A' && scoreA > scoreB) ||
+        (playerTeam === 'B' && scoreB > scoreA)
+      ) {
+        result = 'W';
+      } else {
+        result = 'L';
+      }
+    } else if (scoringFormat === 'individual_time' || scoringFormat === 'individual_points') {
+      continue;
+    } else {
+      if (!match.winner) continue;
+      const playerTeam = playerParticipant.team;
+      result = match.winner === playerTeam ? 'W' : 'L';
+    }
+
+    results.push({
+      week: match.week_number ?? 0,
+      matchId: match.id,
+      result,
+    });
+  }
+
+  results.sort((a, b) => a.week - b.week);
+  const form = results.slice(-5).map((r) => r.result);
+
+  let streak = 0;
+  if (results.length > 0) {
+    const lastResult = results[results.length - 1].result;
+    for (let i = results.length - 1; i >= 0; i--) {
+      if (results[i].result === lastResult) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    if (lastResult === 'L') streak = -streak;
+    if (lastResult === 'D') streak = 0;
+  }
+
+  return { streak, form };
+}
 
 export function calculateStandings(
   scoringFormat: string,
@@ -159,6 +236,7 @@ export function calculateStandings(
 
     const standings = Object.entries(stats).map(([userId, stat]) => {
       const member = members.find((item) => item.user_id === userId);
+      const { streak, form } = computeStreakAndForm(userId, scoringFormat, matches, participants);
       return {
         user_id: userId,
         name: member?.name ?? null,
@@ -172,6 +250,9 @@ export function calculateStandings(
         goalDifference: stat.goalsFor - stat.goalsAgainst,
         totalTime: 0,
         totalPoints: 0,
+        streak,
+        form,
+        previousRank: null,
       };
     });
 
@@ -289,6 +370,9 @@ export function calculateStandings(
           goalDifference: 0,
           totalTime: runs.reduce((total, run) => total + run.elapsedSeconds, 0),
           totalPoints: normalizedImprovement,
+          streak: 0,
+          form: [] as Array<'W' | 'L' | 'D'>,
+          previousRank: null,
         };
       });
 
@@ -320,6 +404,9 @@ export function calculateStandings(
         goalDifference: 0,
         totalTime: stat.totalTime,
         totalPoints: 0,
+        streak: 0,
+        form: [] as Array<'W' | 'L' | 'D'>,
+        previousRank: null,
       };
     });
 
@@ -366,6 +453,9 @@ export function calculateStandings(
         goalDifference: 0,
         totalTime: 0,
         totalPoints: stat.totalPoints,
+        streak: 0,
+        form: [] as Array<'W' | 'L' | 'D'>,
+        previousRank: null,
       };
     });
 
@@ -394,6 +484,9 @@ export function calculateStandings(
       goalDifference: 0,
       totalTime: 0,
       totalPoints: 0,
+      streak: 0,
+      form: [] as Array<'W' | 'L' | 'D'>,
+      previousRank: null,
     }));
   }
 
@@ -431,6 +524,7 @@ export function calculateStandings(
 
   const standings = Object.entries(stats).map(([userId, stat]) => {
     const member = members.find((item) => item.user_id === userId);
+    const { streak, form } = computeStreakAndForm(userId, scoringFormat, matches, participants);
     return {
       user_id: userId,
       name: member?.name ?? null,
@@ -444,6 +538,9 @@ export function calculateStandings(
       goalDifference: 0,
       totalTime: 0,
       totalPoints: 0,
+      streak,
+      form,
+      previousRank: null,
     };
   });
 

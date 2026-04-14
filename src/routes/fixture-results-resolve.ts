@@ -2,9 +2,10 @@ import { Router, Request, Response } from 'express';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { supabaseAdmin } from '../utils/supabase';
 import { getLeagueRole, isLeagueAdminRole } from '../utils/league-access';
+import { notifyFixtureParticipants } from '../services/notification.service';
 import { asObject, getFixture } from './fixture-results.shared';
 
-const router = Router();
+const router: Router = Router();
 
 router.post('/:id/results/resolve', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -123,6 +124,14 @@ router.post('/:id/results/resolve', requireAuth, async (req: Request, res: Respo
       finalized: true,
       submissionId: finalizedSubmissionId,
     });
+
+    // Notify fixture participants that the dispute was resolved (non-blocking)
+    const weekLabel = fixture.week_number ? `Week ${fixture.week_number} ` : '';
+    notifyFixtureParticipants(fixtureId, userId, {
+      title: `${weekLabel}Dispute Resolved`,
+      body: `The organizer has resolved the disputed ${weekLabel}result. The match is now finalized.`,
+      data: { type: 'result_resolved', leagueId: fixture.league_id, fixtureId },
+    }).catch(() => {});
   } catch (error) {
     console.error('Result resolve error:', error);
     res.status(500).json({ error: 'Failed to resolve result' });

@@ -2,9 +2,12 @@ import { Router, Request, Response } from 'express';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { supabaseAdmin } from '../utils/supabase';
 import { getLeagueRole, isLeagueAdminRole } from '../utils/league-access';
+import { getHostName } from '../utils/profile';
+import { notifyFixtureParticipants } from '../services/notification.service';
+import { advanceTournamentWinner } from '../services/tournament-advance.service';
 import { asObject, getFixture } from './fixture-results.shared';
 
-const router = Router();
+const router: Router = Router();
 
 router.post('/:id/results/submit', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -95,6 +98,32 @@ router.post('/:id/results/submit', requireAuth, async (req: Request, res: Respon
       submission,
       finalized: isOrganizerSubmission,
     });
+
+    // Auto-advance tournament winner (non-blocking)
+    if (isOrganizerSubmission) {
+      const finalPayload = asObject(submission.payload);
+      const winnerSide = typeof finalPayload.winner === 'string' ? finalPayload.winner : null;
+      if (winnerSide) {
+        advanceTournamentWinner(fixtureId, winnerSide).catch(() => {});
+      }
+    }
+
+    // Send push notification to other fixture participants (non-blocking)
+    const weekLabel = fixture.week_number ? `Week ${fixture.week_number} ` : '';
+    getHostName(userId).then((submitterName) => {
+      const title = isOrganizerSubmission
+        ? `${weekLabel}Result Finalized`
+        : `${weekLabel}Result Submitted`;
+      const body = isOrganizerSubmission
+        ? `${submitterName} (organizer) finalized the result for your ${weekLabel}match.`
+        : `${submitterName} submitted a result for your ${weekLabel}match. Tap to confirm.`;
+
+      notifyFixtureParticipants(fixtureId, userId, {
+        title,
+        body,
+        data: { type: 'result_submitted', leagueId: fixture.league_id, fixtureId },
+      }).catch(() => {});
+    }).catch(() => {});
   } catch (error) {
     console.error('Result submission error:', error);
     res.status(500).json({ error: 'Failed to submit result' });

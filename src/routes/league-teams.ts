@@ -9,7 +9,7 @@ import {
   isAssignedDoublesLeague,
 } from '../services/league-rules.service';
 
-const router = Router();
+const router: Router = Router();
 
 router.get('/:id/teams/assigned', requireAuth, async (req: Request, res: Response) => {
   try {

@@ -27,29 +27,49 @@ src/
 │
 ├── routes/                          # Thin route handlers — validate input, call services, return response
 │   ├── email.ts                     # POST /api/email/send
+│   ├── courts.ts                    # GET /api/courts/osm, POST /api/courts/osm/import, PATCH /api/courts/:id/details
 │   ├── leagues.ts                   # POST /api/leagues/:id/sessions (create/update session)
 │   ├── league-fixtures.ts           # GET  /api/leagues/:id/fixtures
 │   ├── league-invites.ts            # GET/POST /api/leagues/:id/invites, POST /join
 │   ├── league-schedule.ts           # POST /api/leagues/:id/schedule/generate
 │   ├── league-standings.ts          # GET  /api/leagues/:id/standings
 │   ├── league-teams.ts              # GET/PUT /api/leagues/:id/teams/assigned
+│   ├── league-announcements.ts      # GET/POST /api/leagues/:id/announcements
+│   ├── league-availability.ts       # GET/PUT /api/leagues/:id/availability, GET .../summary
+│   ├── league-playoffs.ts           # POST /api/leagues/:id/playoffs/generate
+│   ├── league-seasons.ts            # GET/POST /api/leagues/:id/seasons
 │   ├── fixture-results-submit.ts    # POST /api/fixtures/:id/results/submit
 │   ├── fixture-results-confirm.ts   # POST /api/fixtures/:id/results/confirm
 │   ├── fixture-results-resolve.ts   # POST /api/fixtures/:id/results/resolve
 │   ├── fixture-results.shared.ts    # Shared helpers for fixture result routes
+│   ├── fixture-reschedule.ts        # PATCH /api/fixtures/:id/reschedule
+│   ├── push-tokens.ts               # POST/DELETE /api/users/push-token
+│   ├── user-fixtures.ts             # GET /api/users/me/upcoming-fixtures
+│   ├── user-stats.ts                # GET /api/users/me/match-history, .../head-to-head/:opponentId
 │   └── sessions.ts                  # POST /api/sessions/:id/runs/submit, review, finalize
 │
 ├── services/                        # Business logic (pure where possible, testable)
 │   ├── email.service.ts             # Resend batch send with chunking
+│   ├── court-import.service.ts      # Import courts from Overpass/OSM into DB
 │   ├── fixture-schedule.service.ts  # Round-robin and shuffle schedule algorithms
 │   ├── league.service.ts            # League CRUD helpers
 │   ├── league-rules.service.ts      # Sport-specific rule configuration
 │   ├── league-standings-read.service.ts  # Standings data fetching
+│   ├── nominatim.service.ts         # Geocoding via Nominatim (OpenStreetMap)
+│   ├── notification.service.ts      # Web push notification delivery
+│   ├── overpass.service.ts          # Query Overpass API for sports courts
 │   ├── session.service.ts           # Running session helpers
-│   └── standings.service.ts         # Standings calculation (4 scoring formats)
+│   ├── standings.service.ts         # Standings calculation (4 scoring formats)
+│   ├── tournament-advance.service.ts  # Advance teams through tournament brackets
+│   └── tournament-schedule.service.ts # Generate tournament bracket schedules
 │
 ├── templates/
 │   └── email.ts                     # HTML email templates (update, invite)
+│
+├── scripts/                         # One-off admin/migration scripts (run via ts-node)
+│   ├── seed-courts.ts               # Seed courts from OSM (`pnpm seed:courts`)
+│   ├── fix-court-names.ts           # Backfill/normalise court names
+│   └── migrate-legacy-matches.ts    # Migrate pre-schema match records
 │
 └── utils/                           # Shared utilities (no business logic)
     ├── supabase.ts                  # Supabase admin client init
@@ -73,9 +93,9 @@ src/
 ## Tests
 
 - Test runner: Node.js built-in test runner (`node --test`)
-- Test files: co-located with services as `*.test.ts`
-- Run: `npm test`
-- Current coverage: `fixture-schedule.service`, `league-rules.service`, `standings.service`
+- Test files: `src/_tests_/services/*.test.ts` and `src/_tests_/utils/*.unit.test.ts`
+- Run all: `pnpm test` (runs `test:services` then `test:unit`)
+- Current coverage: `fixture-schedule.service`, `league-rules.service`, `standings.service` (services); `html`, `league-dates`, `rules` (utils)
 
 ## Environment Variables
 
@@ -89,8 +109,9 @@ See `.env.example` for the full list:
 
 ## Commands
 
-- `npm run dev` — start dev server (nodemon + ts-node)
-- `npm run build` — compile TypeScript to `dist/`
-- `npm run start` — run compiled server (`node dist/index.js`)
-- `npm run lint` — type-check with `tsc --noEmit`
-- `npm test` — run service tests
+- `pnpm dev` — start dev server (nodemon + ts-node)
+- `pnpm build` — compile TypeScript to `dist/`
+- `pnpm start` — run compiled server (`node dist/index.js`)
+- `pnpm lint` — type-check with `tsc --noEmit`
+- `pnpm test` — run all tests (services + utils)
+- `pnpm seed:courts` — import courts from OSM via Overpass

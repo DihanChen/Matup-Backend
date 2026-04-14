@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../utils/supabase';
 export type FixtureRow = {
   id: string;
   league_id: string;
+  week_number: number | null;
   status: string;
   metadata: Record<string, unknown> | null;
 };
@@ -26,7 +27,7 @@ export function asObject(value: unknown): Record<string, unknown> {
 export async function getFixture(fixtureId: string): Promise<FixtureRow | null> {
   const { data, error } = await supabaseAdmin
     .from('league_fixtures')
-    .select('id, league_id, status, metadata')
+    .select('id, league_id, week_number, status, metadata')
     .eq('id', fixtureId)
     .single();
 
