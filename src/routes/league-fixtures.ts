@@ -3,7 +3,7 @@ import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { getLeagueRole } from '../utils/league-access';
 import { supabaseAdmin } from '../utils/supabase';
 
-const router = Router();
+const router: Router = Router();
 
 router.get('/:id/fixtures', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -19,6 +19,7 @@ router.get('/:id/fixtures', requireAuth, async (req: Request, res: Response) => 
       typeof weekQuery === 'string' && weekQuery.trim() !== ''
         ? parseInt(weekQuery, 10)
         : null;
+    const seasonId = typeof req.query.season_id === 'string' ? req.query.season_id : null;
 
     const role = await getLeagueRole(leagueId, userId);
     if (!role) {
@@ -29,7 +30,7 @@ router.get('/:id/fixtures', requireAuth, async (req: Request, res: Response) => 
     let fixtureQuery = supabaseAdmin
       .from('league_fixtures')
       .select(
-        'id, week_number, starts_at, ends_at, fixture_type, status, metadata, created_at, updated_at'
+        'id, week_number, starts_at, ends_at, fixture_type, status, metadata, court_id, created_at, updated_at'
       )
       .eq('league_id', leagueId)
       .order('week_number', { ascending: true })
@@ -37,6 +38,9 @@ router.get('/:id/fixtures', requireAuth, async (req: Request, res: Response) => 
 
     if (weekNumber && Number.isFinite(weekNumber)) {
       fixtureQuery = fixtureQuery.eq('week_number', weekNumber);
+    }
+    if (seasonId) {
+      fixtureQuery = fixtureQuery.eq('season_id', seasonId);
     }
 
     const { data: fixtures, error: fixturesError } = await fixtureQuery;
@@ -81,6 +85,17 @@ router.get('/:id/fixtures', requireAuth, async (req: Request, res: Response) => 
       .select('fixture_id')
       .in('fixture_id', fixtureIds);
 
+    // Fetch court details for fixtures that have court_id
+    const courtIds = [...new Set((fixtures || []).map((f) => f.court_id).filter(Boolean))];
+    let courtMap = new Map<string, Record<string, unknown>>();
+    if (courtIds.length > 0) {
+      const { data: courts } = await supabaseAdmin
+        .from('courts')
+        .select('id, name, address, latitude, longitude')
+        .in('id', courtIds);
+      courtMap = new Map((courts || []).map((c) => [c.id, c]));
+    }
+
     const profileMap = new Map((profiles || []).map((profile) => [profile.id, profile]));
     const participantMap = new Map<string, Array<Record<string, unknown>>>();
     const latestSubmissionMap = new Map<string, Record<string, unknown>>();
@@ -112,6 +127,7 @@ router.get('/:id/fixtures', requireAuth, async (req: Request, res: Response) => 
 
     const response = (fixtures || []).map((fixture) => ({
       ...fixture,
+      court: fixture.court_id ? courtMap.get(fixture.court_id) || null : null,
       participants: participantMap.get(fixture.id) || [],
       latest_submission: latestSubmissionMap.get(fixture.id) || null,
       checkins_count: checkinCountMap.get(fixture.id) || 0,

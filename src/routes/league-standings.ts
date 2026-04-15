@@ -6,7 +6,7 @@ import {
   loadLeagueStandings,
 } from '../services/league-standings-read.service';
 
-const router = Router();
+const router: Router = Router();
 
 router.get('/:id/standings', requireAuth, async (req: Request, res: Response) => {
   try {

@@ -4,6 +4,10 @@ import helmet from 'helmet';
 import { env } from './config/env';
 import { gzipJsonResponses } from './middleware/compression';
 import emailRoutes from './routes/email';
+import leagueAnnouncementsRoutes from './routes/league-announcements';
+import leagueAvailabilityRoutes from './routes/league-availability';
+import leaguePlayoffsRoutes from './routes/league-playoffs';
+import leagueSeasonsRoutes from './routes/league-seasons';
 import leagueRoutes from './routes/leagues';
 import leagueFixturesRoutes from './routes/league-fixtures';
 import leagueInvitesRoutes from './routes/league-invites';
@@ -13,8 +17,12 @@ import leagueTeamsRoutes from './routes/league-teams';
 import fixtureResultsSubmitRoutes from './routes/fixture-results-submit';
 import fixtureResultsConfirmRoutes from './routes/fixture-results-confirm';
 import fixtureResultsResolveRoutes from './routes/fixture-results-resolve';
+import fixtureRescheduleRoutes from './routes/fixture-reschedule';
 import sessionRoutes from './routes/sessions';
 import courtRoutes from './routes/courts';
+import pushTokenRoutes from './routes/push-tokens';
+import userFixturesRoutes from './routes/user-fixtures';
+import userStatsRoutes from './routes/user-stats';
 
 const app = express();
 
@@ -47,12 +55,20 @@ app.use('/api/leagues', leagueInvitesRoutes);
 app.use('/api/leagues', leagueScheduleRoutes);
 app.use('/api/leagues', leagueStandingsRoutes);
 app.use('/api/leagues', leagueTeamsRoutes);
+app.use('/api/leagues', leagueAnnouncementsRoutes);
+app.use('/api/leagues', leagueAvailabilityRoutes);
+app.use('/api/leagues', leaguePlayoffsRoutes);
+app.use('/api/leagues', leagueSeasonsRoutes);
 app.use('/api/leagues', leagueRoutes);
 app.use('/api/fixtures', fixtureResultsSubmitRoutes);
 app.use('/api/fixtures', fixtureResultsConfirmRoutes);
 app.use('/api/fixtures', fixtureResultsResolveRoutes);
+app.use('/api/fixtures', fixtureRescheduleRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/courts', courtRoutes);
+app.use('/api/users', pushTokenRoutes);
+app.use('/api/users', userFixturesRoutes);
+app.use('/api/users', userStatsRoutes);
 
 // 404 handler
 app.use((_req, res) => {

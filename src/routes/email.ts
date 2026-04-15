@@ -7,7 +7,7 @@ import { env } from '../config/env';
 import { getHostName } from '../utils/profile';
 import { buildContextUpdateEmailHtml } from '../templates/email';
 
-const router = Router();
+const router: Router = Router();
 
 type EmailRequestBody = {
   type: 'event' | 'league';
@@ -135,6 +135,16 @@ router.post('/send', requireAuth, emailSendRateLimit, async (req: Request, res: 
       contextLabel = 'league';
       contextTitle = league.name;
       link = `${env.frontendUrl}/leagues/${league.id}`;
+
+      // Also create an in-app announcement (non-blocking)
+      void supabaseAdmin
+        .from('league_announcements')
+        .insert({
+          league_id: id,
+          author_id: userId,
+          title: trimmedSubject,
+          body: trimmedMessage,
+        });
     } else {
       res.status(400).json({ error: 'Invalid type' });
       return;

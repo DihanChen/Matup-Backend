@@ -1,10 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/auth';
 import { courtsOsmRateLimit } from '../middleware/rate-limit';
-import { fetchOsmCourts } from '../services/overpass.service';
+import { importOsmCourtsForBounds, persistOsmCourts } from '../services/court-import.service';
+import type { OsmCourt } from '../services/overpass.service';
 import { supabaseAdmin } from '../utils/supabase';
 
-const router = Router();
+const router: Router = Router();
 const DEFAULT_OSM_COURT_NAME = 'Public Court';
 
 type OsmImportBody = {
@@ -33,6 +34,12 @@ function parseNumberParam(value: unknown): number {
   return Number.parseFloat(raw);
 }
 
+function parseBooleanParam(value: unknown): boolean {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== 'string') return false;
+  return raw === '1' || raw.toLowerCase() === 'true';
+}
+
 router.get('/osm', courtsOsmRateLimit, async (req: Request, res: Response) => {
   try {
     const south = parseNumberParam(req.query.south);
@@ -58,8 +65,9 @@ router.get('/osm', courtsOsmRateLimit, async (req: Request, res: Response) => {
       return;
     }
 
-    const courts = await fetchOsmCourts(south, west, north, east);
-    res.json({ courts });
+    const persist = parseBooleanParam(req.query.persist);
+    const { courts, persisted } = await importOsmCourtsForBounds(south, west, north, east, { persist });
+    res.json({ courts, persisted });
   } catch (error) {
     console.error('OSM courts fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch OSM courts' });
@@ -93,60 +101,58 @@ router.post('/osm/import', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    const osmId = body.osm_id;
+    const osmCourt: OsmCourt = {
+      osm_id: body.osm_id,
+      osm_type: body.osm_type.trim(),
+      name: normalizedName,
+      latitude: body.latitude,
+      longitude: body.longitude,
+      sport: body.sport_types.join(';'),
+      surface: body.surface || null,
+      lit: null,
+      access: null,
+      operator: null,
+      opening_hours: null,
+    };
 
-    const { data: existingCourt, error: existingCourtError } = await supabaseAdmin
+    await persistOsmCourts([osmCourt]);
+
+    const { data: court, error: courtError } = await supabaseAdmin
       .from('courts')
-      .select('id')
-      .eq('osm_id', osmId)
-      .maybeSingle();
+      .select('*')
+      .eq('osm_id', body.osm_id)
+      .single();
 
-    if (existingCourtError) {
-      res.status(500).json({ error: existingCourtError.message || 'Failed to import court' });
+    if (courtError || !court) {
+      res.status(500).json({ error: courtError?.message || 'Failed to import court' });
       return;
     }
 
-    if (existingCourt) {
-      const { data: updatedCourt, error: updateError } = await supabaseAdmin
-        .from('courts')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', existingCourt.id)
-        .select('*')
-        .single();
+    const shouldUpdateAddress =
+      typeof court.source === 'string' &&
+      court.source === 'osm' &&
+      typeof body.address === 'string' &&
+      body.address.trim() !== '' &&
+      court.address !== body.address.trim();
 
-      if (updateError || !updatedCourt) {
-        res.status(500).json({ error: updateError?.message || 'Failed to import court' });
-        return;
-      }
-
-      res.json({ court: updatedCourt });
+    if (!shouldUpdateAddress) {
+      res.json({ court });
       return;
     }
 
-    const { data: insertedCourt, error: insertError } = await supabaseAdmin
+    const { data: updatedCourt, error: updatedCourtError } = await supabaseAdmin
       .from('courts')
-      .insert({
-        osm_id: osmId,
-        osm_type: body.osm_type.trim(),
-        source: 'osm',
-        status: 'approved',
-        created_by: null,
-        name: normalizedName,
-        latitude: body.latitude,
-        longitude: body.longitude,
-        sport_types: body.sport_types.map((sport) => sport.trim().toLowerCase()),
-        surface: body.surface || null,
-        address: body.address.trim(),
-      })
+      .update({ address: body.address.trim(), updated_at: new Date().toISOString() })
+      .eq('id', court.id)
       .select('*')
       .single();
 
-    if (insertError || !insertedCourt) {
-      res.status(500).json({ error: insertError?.message || 'Failed to import court' });
+    if (updatedCourtError || !updatedCourt) {
+      res.status(500).json({ error: updatedCourtError?.message || 'Failed to import court' });
       return;
     }
 
-    res.json({ court: insertedCourt });
+    res.json({ court: updatedCourt });
   } catch (error) {
     console.error('OSM court import error:', error);
     res.status(500).json({ error: 'Failed to import court' });

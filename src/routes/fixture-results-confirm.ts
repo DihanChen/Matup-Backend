@@ -2,6 +2,9 @@ import { Router, Request, Response } from 'express';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { supabaseAdmin } from '../utils/supabase';
 import { getLeagueRole, isLeagueAdminRole } from '../utils/league-access';
+import { getHostName } from '../utils/profile';
+import { notifyUsers } from '../services/notification.service';
+import { advanceTournamentWinner } from '../services/tournament-advance.service';
 import {
   SubmissionRow,
   asObject,
@@ -9,7 +12,7 @@ import {
   getFixtureSide,
 } from './fixture-results.shared';
 
-const router = Router();
+const router: Router = Router();
 
 router.post('/:id/results/confirm', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -110,6 +113,16 @@ router.post('/:id/results/confirm', requireAuth, async (req: Request, res: Respo
         .eq('id', fixtureId);
 
       res.json({ success: true, finalized: false, disputed: true });
+
+      // Notify submitter that their result was rejected (non-blocking)
+      const weekLabel = fixture.week_number ? `Week ${fixture.week_number} ` : '';
+      getHostName(userId).then((reviewerName) => {
+        notifyUsers([submission.submitted_by], {
+          title: `${weekLabel}Result Rejected`,
+          body: `${reviewerName} rejected your ${weekLabel}result submission. The match is now disputed.`,
+          data: { type: 'result_rejected', leagueId: fixture.league_id, fixtureId },
+        }).catch(() => {});
+      }).catch(() => {});
       return;
     }
 
@@ -175,6 +188,33 @@ router.post('/:id/results/confirm', requireAuth, async (req: Request, res: Respo
       finalized: finalize,
       disputed: false,
     });
+
+    // Auto-advance tournament winner (non-blocking)
+    if (finalize) {
+      const finalPayload = asObject(submission.payload);
+      const winnerSide = typeof finalPayload.winner === 'string' ? finalPayload.winner : null;
+      if (winnerSide) {
+        advanceTournamentWinner(fixtureId, winnerSide).catch(() => {});
+      }
+    }
+
+    // Notify submitter that their result was confirmed (non-blocking)
+    const weekLabel = fixture.week_number ? `Week ${fixture.week_number} ` : '';
+    if (finalize) {
+      notifyUsers([submission.submitted_by], {
+        title: `${weekLabel}Result Finalized`,
+        body: `Your ${weekLabel}result has been confirmed and finalized.`,
+        data: { type: 'result_finalized', leagueId: fixture.league_id, fixtureId },
+      }).catch(() => {});
+    } else {
+      getHostName(userId).then((confirmerName) => {
+        notifyUsers([submission.submitted_by], {
+          title: `${weekLabel}Result Confirmed`,
+          body: `${confirmerName} confirmed your ${weekLabel}result. Awaiting remaining confirmations.`,
+          data: { type: 'result_confirmed', leagueId: fixture.league_id, fixtureId },
+        }).catch(() => {});
+      }).catch(() => {});
+    }
   } catch (error) {
     console.error('Result confirmation error:', error);
     res.status(500).json({ error: 'Failed to confirm result' });

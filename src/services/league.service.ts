@@ -5,11 +5,14 @@ export type LeagueRow = {
   id: string;
   sport_type: string;
   scoring_format: string;
+  league_type: string;
   name: string;
   invite_code: string | null;
   rotation_type: string | null;
   season_weeks: number | null;
   start_date: string | null;
+  default_court_id: string | null;
+  current_season_id: string | null;
   rules_jsonb: unknown;
 };
 
@@ -54,7 +57,7 @@ export async function getLeague(leagueId: string): Promise<LeagueRow | null> {
   const { data, error } = await supabaseAdmin
     .from('leagues')
     .select(
-      'id, name, sport_type, scoring_format, invite_code, rotation_type, season_weeks, start_date, rules_jsonb'
+      'id, name, sport_type, scoring_format, league_type, invite_code, rotation_type, season_weeks, start_date, default_court_id, current_season_id, rules_jsonb'
     )
     .eq('id', leagueId)
     .single();

@@ -300,6 +300,36 @@ export async function loadLeagueStandings(
       runningComparisonMode: league.sport_type === 'running' ? runningComparisonMode : undefined,
     }
   );
+
+  // Compute previousRank by excluding the latest week's matches
+  const weekNumbers = rankingMatches
+    .map((m) => m.week_number)
+    .filter((w): w is number => w != null);
+  const maxWeek = weekNumbers.length > 0 ? Math.max(...weekNumbers) : null;
+
+  if (maxWeek != null && weekNumbers.some((w) => w !== maxWeek)) {
+    const prevMatches = rankingMatches.filter(
+      (m) => m.week_number == null || m.week_number < maxWeek
+    );
+    const prevMatchIds = new Set(prevMatches.map((m) => m.id));
+    const prevParticipants = rankingParticipants.filter((p) => prevMatchIds.has(p.match_id));
+
+    const prevStandings = calculateStandings(
+      league.scoring_format,
+      prevMatches,
+      prevParticipants,
+      rankingMembers,
+      {
+        runningComparisonMode: league.sport_type === 'running' ? runningComparisonMode : undefined,
+      }
+    );
+
+    const prevRankMap = new Map(prevStandings.map((s) => [s.user_id, s.rank]));
+    for (const standing of standings) {
+      standing.previousRank = prevRankMap.get(standing.user_id) ?? null;
+    }
+  }
+
   const teamStandings =
     league.scoring_format === 'doubles'
       ? calculateTeamStandings(rankingMatches, rankingParticipants, rankingMembers)
