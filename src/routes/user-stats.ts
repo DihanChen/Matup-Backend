@@ -225,4 +225,144 @@ router.get('/me/head-to-head/:opponentId', requireAuth, async (req: Request, res
   }
 });
 
+/**
+ * GET /api/users/:id/stats
+ * Returns finalized matches and aggregate stats for any user (public).
+ *
+ * Public-by-default: any authenticated user can view any other user's
+ * league stats — matches Strava/Garmin convention. requireAuth prevents
+ * anon scraping. Response shape is byte-identical to /me/match-history
+ * so a future client can swap one for the other without changes.
+ *
+ * Ticket: T-20260415-05
+ */
+router.get('/:id/stats', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const targetUserId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    if (!targetUserId) {
+      res.status(400).json({ error: 'id is required' });
+      return;
+    }
+
+    // Get all fixture IDs the target user participated in
+    const { data: participations, error: partError } = await supabaseAdmin
+      .from('league_fixture_participants')
+      .select('fixture_id, side')
+      .eq('user_id', targetUserId);
+
+    if (partError) {
+      res.status(500).json({ error: partError.message });
+      return;
+    }
+
+    if (!participations || participations.length === 0) {
+      res.json({ matches: [], stats: { played: 0, won: 0, lost: 0, winRate: 0 } });
+      return;
+    }
+
+    const fixtureIds = participations.map((p) => p.fixture_id);
+    const userSideMap = new Map(participations.map((p) => [p.fixture_id, p.side]));
+
+    // Get finalized fixtures
+    const { data: fixtures } = await supabaseAdmin
+      .from('league_fixtures')
+      .select('id, league_id, week_number, starts_at, status, metadata')
+      .in('id', fixtureIds)
+      .eq('status', 'finalized')
+      .order('starts_at', { ascending: false, nullsFirst: false })
+      .limit(100);
+
+    if (!fixtures || fixtures.length === 0) {
+      res.json({ matches: [], stats: { played: 0, won: 0, lost: 0, winRate: 0 } });
+      return;
+    }
+
+    // Get league names
+    const leagueIds = [...new Set(fixtures.map((f) => f.league_id))];
+    const { data: leagues } = await supabaseAdmin
+      .from('leagues')
+      .select('id, name')
+      .in('id', leagueIds);
+
+    const leagueMap = new Map((leagues || []).map((l) => [l.id, l.name]));
+
+    // Get all participants for these fixtures
+    const fIds = fixtures.map((f) => f.id);
+    const { data: allParticipants } = await supabaseAdmin
+      .from('league_fixture_participants')
+      .select('fixture_id, user_id, side')
+      .in('fixture_id', fIds);
+
+    // Get profile names for opponents (anyone other than the target user)
+    const opponentIds = new Set<string>();
+    (allParticipants || []).forEach((p) => {
+      if (p.user_id !== targetUserId) opponentIds.add(p.user_id);
+    });
+
+    const profileMap = new Map<string, string>();
+    if (opponentIds.size > 0) {
+      const { data: profiles } = await supabaseAdmin
+        .from('profiles')
+        .select('id, name')
+        .in('id', [...opponentIds]);
+
+      (profiles || []).forEach((p) => {
+        if (p.name) profileMap.set(p.id, p.name);
+      });
+    }
+
+    // Build participant index by fixture
+    const participantsByFixture = new Map<string, Array<{ user_id: string; side: string }>>();
+    (allParticipants || []).forEach((p) => {
+      const current = participantsByFixture.get(p.fixture_id) || [];
+      current.push({ user_id: p.user_id, side: p.side });
+      participantsByFixture.set(p.fixture_id, current);
+    });
+
+    let won = 0;
+    let lost = 0;
+
+    const matches: MatchHistoryRow[] = fixtures.map((f) => {
+      const metadata = f.metadata as Record<string, unknown> | null;
+      const finalResult = metadata?.final_result as Record<string, unknown> | undefined;
+      const winner = typeof finalResult?.winner === 'string' ? finalResult.winner : null;
+      const sets = Array.isArray(finalResult?.sets) ? (finalResult.sets as number[][]) : null;
+
+      const userSide = userSideMap.get(f.id) || 'A';
+      const parts = participantsByFixture.get(f.id) || [];
+      const opponents = parts
+        .filter((p) => p.user_id !== targetUserId)
+        .map((p) => profileMap.get(p.user_id) || 'Unknown');
+
+      if (winner === userSide) won++;
+      else if (winner) lost++;
+
+      return {
+        fixture_id: f.id,
+        league_id: f.league_id,
+        league_name: leagueMap.get(f.league_id) || 'Unknown League',
+        week_number: f.week_number,
+        starts_at: f.starts_at,
+        status: f.status,
+        user_side: userSide,
+        winner,
+        sets,
+        opponent_names: opponents,
+      };
+    });
+
+    const played = matches.length;
+    const winRate = played > 0 ? Math.round((won / played) * 100) : 0;
+
+    res.json({
+      matches,
+      stats: { played, won, lost, winRate },
+    });
+  } catch (error) {
+    console.error('Public user stats fetch error:', error);
+    res.status(500).json({ error: 'Failed to load user stats' });
+  }
+});
+
 export default router;
