@@ -8,6 +8,26 @@ import { toIsoOrNull, weekEndIso } from '../utils/league-dates';
 
 const router: Router = Router();
 
+// Inline rate-limit for league notify: 5 sends per userId:leagueId per 24 hours.
+type NotifyBucket = { count: number; windowStartMs: number };
+const notifyRateLimitBuckets = new Map<string, NotifyBucket>();
+const NOTIFY_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
+const NOTIFY_MAX = 5;
+
+function checkNotifyRateLimit(userId: string, leagueId: string): boolean {
+  const key = `${userId}:${leagueId}`;
+  const now = Date.now();
+  const existing = notifyRateLimitBuckets.get(key);
+  if (!existing || now - existing.windowStartMs >= NOTIFY_WINDOW_MS) {
+    notifyRateLimitBuckets.set(key, { count: 1, windowStartMs: now });
+    return true;
+  }
+  if (existing.count >= NOTIFY_MAX) return false;
+  existing.count += 1;
+  notifyRateLimitBuckets.set(key, existing);
+  return true;
+}
+
 router.get('/:id/sessions', requireAuth, async (req: Request, res: Response) => {
   try {
     const leagueId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -248,6 +268,64 @@ router.post('/:id/sessions', requireAuth, async (req: Request, res: Response) =>
   } catch (error) {
     console.error('Running session save error:', error);
     res.status(500).json({ error: 'Failed to save session' });
+  }
+});
+
+/**
+ * POST /api/leagues/:id/notify
+ * Send an in-app push notification to all league members (organizer only).
+ * Rate-limited to 5 sends per organizer per league per 24 hours.
+ */
+router.post('/:id/notify', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const leagueId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const { userId } = req as AuthenticatedRequest;
+
+    if (!leagueId) {
+      res.status(400).json({ error: 'League id is required' });
+      return;
+    }
+
+    const role = await getLeagueRole(leagueId, userId);
+    if (!isLeagueAdminRole(role)) {
+      res.status(403).json({ error: 'Only league owner/admin can send notifications' });
+      return;
+    }
+
+    const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+    if (!message) {
+      res.status(400).json({ error: 'Message is required' });
+      return;
+    }
+    if (message.length > 300) {
+      res.status(400).json({ error: 'Message must be 300 characters or fewer' });
+      return;
+    }
+
+    // Inline rate-limit check
+    if (!checkNotifyRateLimit(userId, leagueId)) {
+      res.status(429).json({
+        error:
+          "You've sent the daily limit of in-app notifications for this league. Use email or wait until tomorrow.",
+      });
+      return;
+    }
+
+    const league = await getLeague(leagueId);
+    const leagueName = league?.name || 'Your league';
+
+    const { sent, failed } = await notifyLeagueMembers(leagueId, userId, {
+      title: leagueName,
+      body: message,
+      data: { type: 'organizer_message', leagueId },
+    });
+
+    // skipped = members without tokens (failed from the push API are not "skipped" in the UX sense)
+    // We return sent (push ok) and skipped (no token / push failed)
+    res.json({ sent, skipped: failed });
+  } catch (error) {
+    console.error('League notify error:', error);
+    res.status(500).json({ error: 'Failed to send notification' });
   }
 });
 
